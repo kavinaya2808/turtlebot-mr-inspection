@@ -1,0 +1,15 @@
+# ROS 2
+build/
+install/
+log/
+*.mcap
+*.db3
+bags/
+
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/

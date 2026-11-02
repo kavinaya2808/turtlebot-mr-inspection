@@ -1,0 +1,11 @@
+aruco_inspector:
+  ros__parameters:
+    image_topic: /camera/camera/color/image_raw/compressed
+    camera_info_topic: /camera/camera/color/camera_info
+    dictionary: DICT_4X4_50     # print markers from this dictionary
+    marker_length: 0.15         # m, edge of the black square as printed (measure it!)
+    max_range: 2.5              # m, ignore detections further away
+    min_detections: 3           # sightings before a point is confirmed
+    smoothing: 0.3              # weight of each new sighting
+    map_frame: map
+    fallback_frame: odom        # used until slam_toolbox publishes map
