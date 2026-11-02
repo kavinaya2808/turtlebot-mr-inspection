@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
+using RosMessageTypes.Geometry;
 using RosMessageTypes.Nav;
 using RosMessageTypes.Sensor;
 
@@ -27,6 +28,11 @@ namespace RealTurtleBotMR
         public string topicNamespace = "";
         public string odomTopic = "odom";
         public string batteryTopic = "battery_state";
+        [Tooltip("SLAM correction map -> odom, published by tb3_mr_inspection's mr_frames_publisher")]
+        public string mapToOdomTopic = "/mr/map_to_odom";
+        [Tooltip("Use the map frame (drift-free) whenever the SLAM correction is fresh")]
+        public bool preferMapFrame = true;
+        public float mapCorrectionTimeout = 2.0f;
 
         [Header("Status rules")]
         [Tooltip("Odometry older than this counts as 'no data'.")]
@@ -61,6 +67,15 @@ namespace RealTurtleBotMR
         public float BatteryVoltage { get; private set; }
         public bool IsCharging { get; private set; }
 
+        /// <summary>True while slam_toolbox's map -> odom correction arrives.</summary>
+        public bool UsingMapFrame => preferMapFrame && hasMapToOdom &&
+                                     Time.realtimeSinceStartup - lastMapToOdomTime < mapCorrectionTimeout;
+
+        /// <summary>Robot position in the tracking frame (map when SLAM runs, else odom), Unity axes, y = 0.</summary>
+        public Vector3 FramePositionUnity => UsingMapFrame ? mapToOdomRot * OdomPositionUnity + mapToOdomPos : OdomPositionUnity;
+        /// <summary>Robot yaw in the tracking frame, Unity convention (degrees).</summary>
+        public float FrameYawUnity => UsingMapFrame ? mapToOdomRot.eulerAngles.y + OdomYawUnity : OdomYawUnity;
+
         public float OdomRateHz { get; private set; }
         public float SecondsSinceOdom => HasOdom ? Time.realtimeSinceStartup - lastOdomTime : float.PositiveInfinity;
 
@@ -72,6 +87,10 @@ namespace RealTurtleBotMR
 
         ROSConnection ros;
         float lastOdomTime;
+        bool hasMapToOdom;
+        float lastMapToOdomTime;
+        Vector3 mapToOdomPos;
+        Quaternion mapToOdomRot = Quaternion.identity;
         float rateWindowStart;
         int rateCount;
 
@@ -80,6 +99,8 @@ namespace RealTurtleBotMR
             ros = ROSConnection.GetOrCreateInstance();
             ros.Subscribe<OdometryMsg>(FullOdomTopic, OnOdom);
             ros.Subscribe<BatteryStateMsg>(FullBatteryTopic, OnBattery);
+            if (!string.IsNullOrEmpty(mapToOdomTopic))
+                ros.Subscribe<PoseStampedMsg>(mapToOdomTopic, OnMapToOdom);
             Debug.Log($"[TurtleBotTelemetry] {robotId}: listening on {FullOdomTopic} and {FullBatteryTopic}");
         }
 
@@ -115,6 +136,17 @@ namespace RealTurtleBotMR
 
             LinearSpeed = (float)msg.twist.twist.linear.x;
             AngularSpeed = (float)msg.twist.twist.angular.z;
+        }
+
+        void OnMapToOdom(PoseStampedMsg msg)
+        {
+            Vector3 p = msg.pose.position.From<FLU>();
+            p.y = 0f;
+            float yaw = msg.pose.orientation.From<FLU>().eulerAngles.y;
+            mapToOdomPos = p;
+            mapToOdomRot = Quaternion.Euler(0f, yaw, 0f);
+            hasMapToOdom = true;
+            lastMapToOdomTime = Time.realtimeSinceStartup;
         }
 
         void OnBattery(BatteryStateMsg msg)

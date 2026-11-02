@@ -41,7 +41,12 @@ target_link_libraries(aruco_inspector ${TB3_OPENCV_LIBS})
 ament_target_dependencies(aruco_inspector
   rclcpp sensor_msgs std_msgs geometry_msgs visualization_msgs tf2 tf2_ros tf2_geometry_msgs)
 
-install(TARGETS scan_resampler aruco_inspector DESTINATION lib/${PROJECT_NAME})
+# --- mr_frames_publisher: SLAM correction (map -> odom) for the headset
+add_executable(mr_frames_publisher src/mr_frames_publisher_node.cpp)
+ament_target_dependencies(mr_frames_publisher rclcpp geometry_msgs tf2 tf2_ros)
+
+install(TARGETS scan_resampler aruco_inspector mr_frames_publisher
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config rviz DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

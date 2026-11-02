@@ -6,8 +6,8 @@ Live telemetry, a camera view and inspection points from a real TurtleBot3, show
 
 The project has two halves that talk over ROS 2:
 
-- **Headset (Unity, Meta Quest):** a passthrough MR app. A tag with ID, status and battery floats above the real robot, a glowing ring marks its footprint, and a panel shows speed, turn rate, pose, battery and the robot's live camera.
-- **Robot (ROS 2 Jazzy):** the TurtleBot3 publishes odometry, lidar, battery and RealSense images. A C++ package adds SLAM mapping and visual "inspection points": printed ArUco markers that the robot finds with its camera and places on the map.
+- **Headset (Unity, Meta Quest):** a passthrough MR app. A tag with ID, status and battery floats above the real robot, a glowing ring marks its footprint, and a panel shows speed, turn rate, pose, battery and the robot's live camera. With SLAM running, the live map is drawn on the real floor and the robot can be sent anywhere by pointing the controller at the floor.
+- **Robot (ROS 2 Jazzy):** the TurtleBot3 publishes odometry, lidar, battery and RealSense images. A C++ package adds SLAM mapping, Nav2 navigation and visual "inspection points": printed ArUco markers that the robot finds with its camera and places on the map.
 
 ## How it fits together
 
@@ -15,14 +15,14 @@ The project has two halves that talk over ROS 2:
  TurtleBot3 (Raspberry Pi 4, ROS 2 Jazzy)                    Meta Quest 3S
  ┌──────────────────────────────────────┐   Wi-Fi, TCP      ┌──────────────────────────┐
  │ turtlebot3_bringup  /odom /scan      │   port 10000      │ Unity app (passthrough)  │
- │                     /battery_state   │ ───────────────▶  │ head tag · floor ring    │
- │ realsense2_camera   compressed image │                   │ telemetry panel + camera │
- │ ros_tcp_endpoint    bridge to Unity  │                   │ align with controller    │
+ │                     /battery_state   │ ◀─────────────▶   │ head tag · floor ring    │
+ │ realsense2_camera   compressed image │  telemetry, map,  │ telemetry panel + camera │
+ │ ros_tcp_endpoint    bridge to Unity  │  path ▶ ◀ goals   │ SLAM map · point-and-go  │
  └──────────────────────────────────────┘                   └──────────────────────────┘
-          │ rosbag recordings
+          ▲ DDS over Wi-Fi: /scan /odom /tf ▶   ◀ /cmd_vel /map /plan
           ▼
- Development PC (ROS 2 Jazzy in Docker)
- tb3_mr_inspection: scan_resampler · slam_toolbox · aruco_inspector · RViz
+ ROS 2 PC on the robot's network (live)       or   development PC (rosbag replay)
+ tb3_mr_inspection: scan_resampler · slam_toolbox · Nav2 · mr_frames_publisher · aruco_inspector
 ```
 
 ## Methods
@@ -32,6 +32,8 @@ The project has two halves that talk over ROS 2:
 **Telemetry.** Unity subscribes to `/odom`, `/battery_state` and the compressed RealSense image through ROS-TCP-Connector. A status (moving, idle, low battery, charging, no data, no link) is derived from speed, battery and message age. Camera frames arrive as JPEG and only the newest one is decoded each frame, so the view never lags behind.
 
 **Mapping.** The TurtleBot3's LDS-02 lidar returns a different number of beams on every turn (about 218 to 244), which slam_toolbox rejects. `scan_resampler` (C++) resamples every scan onto a fixed 360 × 1° grid before slam_toolbox builds the map.
+
+**Drift-free tracking and point-and-go.** Odometry drifts as the wheels slip. slam_toolbox corrects that by moving the odometry frame inside the map; `mr_frames_publisher` sends just this correction (map → odom) to the headset, which then places the robot by map pose instead of raw odometry. The same alignment draws the occupancy grid on the floor and turns a point the operator aims at into a Nav2 goal in the map frame; Nav2's planned path is drawn back on the floor. On Jazzy, Nav2 publishes plain `Twist` by default while the TurtleBot3 accepts only `TwistStamped`, so the Nav2 parameters enable stamped velocity on every node that outputs `cmd_vel`.
 
 **Inspection points.** `aruco_inspector` (C++, OpenCV) finds ArUco markers in the colour stream, refines their corners to sub-pixel accuracy, and estimates each marker's pose with a square-target PnP using the camera's calibration and the printed marker size. TF moves the pose into the map frame; a point is confirmed after three sightings and smoothed over time.
 
@@ -59,6 +61,7 @@ The project has two halves that talk over ROS 2:
 | 2.0 m | 179 mm | 91 mm |
 
 - **End to end** (simulated robot stream, 15 cm marker at 1.0 m, through slam_toolbox and TF): point confirmed in the map frame 3.5 mm from ground truth.
+- **Mapping + Nav2** on a simulated Burger: map built, all Nav2 servers active, a goal on `/goal_pose` reached and reported as succeeded.
 
 ## Repository structure
 
@@ -70,11 +73,13 @@ turtlebot-mr-inspection/
 │   ├── Scripts/Calibration/        RobotWorldAnchor (controller alignment)
 │   ├── Scripts/Dashboard/          RobotHeadTag, RobotFootprint, TelemetryPanel, MRStyle
 │   ├── Scripts/MR/                 RoomMeshVisibility
+│   ├── Scripts/Navigation/         MapOverlay (SLAM map on the floor), NavGoalSender (point-and-go)
 │   └── Editor/                     "RealTurtleBotMR > Set Up Scene" tool
 ├── ros2/tb3_mr_inspection/         ROS 2 package (C++): SLAM + inspection points
-│   ├── src/                        scan_resampler, aruco_inspector
+│   ├── src/                        scan_resampler, aruco_inspector, mr_frames_publisher
 │   ├── include/ test/              resampling logic + GoogleTest
-│   ├── launch/ config/ rviz/
+│   ├── launch/                     mapping_nav (live SLAM + Nav2), inspection (replay)
+│   ├── config/ rviz/               slam_toolbox, Nav2 (Burger, Jazzy), inspector
 │   └── markers/                    printable ArUco markers (15 cm)
 ├── tools/
 │   ├── patch_unity_project_for_quest.py   makes the host project build for Quest
@@ -120,19 +125,27 @@ Drive with `ros2 run turtlebot3_teleop teleop_keyboard`.
 | A | Align with the robot |
 | Right grip + right stick / left grip + left stick | Slide / rotate the alignment |
 | B | Bring the panel in front of you |
+| Right stick click (aiming at the floor) | Send the robot there (needs SLAM + Nav2) |
+| X | Show or hide the SLAM map on the floor |
 | Y | Show or hide the room scan |
 | Trigger | Click UI |
 
-### 3. Mapping and inspection points
+### 3. Live mapping and point-and-go
 
-Build on a ROS 2 Jazzy machine:
+On a ROS 2 Jazzy machine on the robot's network, with the robot running bringup and the bridge:
 
 ```bash
-sudo apt install ros-jazzy-slam-toolbox libopencv-dev
-cd ~/ws/src && cp -r <this repo>/ros2/tb3_mr_inspection .
+sudo apt install ros-jazzy-slam-toolbox ros-jazzy-navigation2 ros-jazzy-nav2-bringup libopencv-dev
+cd ~/ws/src && git clone <this repo>
 cd ~/ws && colcon build --packages-select tb3_mr_inspection && source install/setup.bash
-colcon test --packages-select tb3_mr_inspection && colcon test-result --verbose
+ros2 launch tb3_mr_inspection mapping_nav.launch.py
 ```
+
+Drive with teleop to build the map, then send goals with **Nav2 Goal** in RViz, or in the headset: align with A, aim at the floor and click the right stick.
+
+### 4. Inspection points (recorded session)
+
+Run the unit tests: `colcon test --packages-select tb3_mr_inspection && colcon test-result --verbose`.
 
 Print `ros2/tb3_mr_inspection/markers/` at 100 % and tape the markers at the camera's height. Record a drive on the robot:
 
@@ -162,6 +175,7 @@ This project started from these repositories. Their code is not copied here; it 
 | [Meta XR SDK and MR Utility Kit](https://developers.meta.com/horizon/documentation/unity/) | Passthrough, scene understanding, controller input | Passthrough and scene support enabled |
 | [TurtleBot3](https://github.com/ROBOTIS-GIT/turtlebot3) (ROBOTIS) | Robot bringup and teleoperation | — |
 | [slam_toolbox](https://github.com/SteveMacenski/slam_toolbox) | 2D mapping | Parameters tuned for the LDS-02 and a small room |
+| [Nav2](https://github.com/ros-navigation/navigation2) | Path planning and control | Jazzy default parameters adapted for the Burger (stamped `cmd_vel`, footprint, speeds) |
 | [realsense-ros](https://github.com/IntelRealSense/realsense-ros) (Intel) | Camera driver | — |
 | [OpenCV](https://opencv.org) ArUco | Marker detection and pose | — |
 

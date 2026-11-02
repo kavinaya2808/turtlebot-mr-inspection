@@ -16,6 +16,7 @@ namespace RealTurtleBotMR
         public TurtleBotTelemetry telemetry;
         public RobotWorldAnchor anchor;
         public RobotCameraFeed cameraFeed;
+        public NavGoalSender nav;
 
         [Header("Placement (relative to your head)")]
         public float distance = 1.0f;
@@ -181,9 +182,19 @@ namespace RealTurtleBotMR
             if (hintText)
             {
                 string hl = MRStyle.Hex(MRStyle.Cyan);
-                hintText.text = (anchor == null || !anchor.IsAligned)
-                    ? $"<color={hl}>Align</color>  rest the right controller on the robot, pointing where it faces, press <color={hl}>A</color>"
-                    : $"<color={MRStyle.Hex(MRStyle.Green)}>Aligned</color>   grip + stick  fine-tune   ·   A  re-align   ·   B  bring panel   ·   Y  room scan";
+                string ok = MRStyle.Hex(MRStyle.Green);
+                string amber = MRStyle.Hex(MRStyle.Amber);
+                string navStatus = nav != null ? nav.StatusText : "";
+                bool navBusy = navStatus.StartsWith("Goal") || navStatus.StartsWith("Driving") || navStatus.StartsWith("Arrived");
+
+                if (anchor == null || !anchor.IsAligned)
+                    hintText.text = $"<color={hl}>Align</color>  rest the right controller on the robot, pointing where it faces, press <color={hl}>A</color>";
+                else if (navBusy)
+                    hintText.text = $"<color={amber}>{navStatus}</color>   ·   A re-align   ·   B panel";
+                else if (anchor.InMapFrame)
+                    hintText.text = $"<color={ok}>Aligned on map</color>   aim at floor + <color={hl}>right stick click</color>: send robot   ·   X map   ·   A re-align";
+                else
+                    hintText.text = $"<color={ok}>Aligned</color>   grip + stick: fine-tune  ·  A: re-align  ·  B: panel  ·  start SLAM for point-and-go";
             }
         }
     }

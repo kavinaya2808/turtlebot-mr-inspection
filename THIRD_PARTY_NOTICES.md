@@ -15,6 +15,7 @@ under the MIT License; its full copyright notice and license text are in
 | Unity ROS-TCP-Connector, ROS-TCP-Endpoint, URDF-Importer | Apache-2.0 |
 | TurtleBot3 (ROBOTIS) | Apache-2.0 |
 | slam_toolbox | LGPL-2.1 |
+| Nav2 | Apache-2.0 |
 | realsense-ros | Apache-2.0 |
 | OpenCV | Apache-2.0 |
 | Meta XR SDK, MR Utility Kit | Oculus SDK License |

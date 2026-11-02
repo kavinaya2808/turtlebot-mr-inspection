@@ -10,6 +10,8 @@ The robot maps the room with its lidar, finds ArUco markers ("inspection points"
 | --- | --- | --- |
 | `scan_resampler` | C++ | Resamples every LDS-02 scan (218 to 244 beams) onto a fixed 360 × 1° grid, so slam_toolbox accepts it |
 | `aruco_inspector` | C++, OpenCV | Detects ArUco markers in the compressed colour stream, estimates their pose, moves them into the `map` frame and keeps a smoothed, confirmed list |
+| `mr_frames_publisher` | C++ | Publishes slam_toolbox's map → odom correction on `/mr/map_to_odom` (10 Hz) so the headset can track the robot drift-free without the whole TF tree |
+| Nav2 | — | Live navigation on the SLAM map; goals on `/goal_pose` (from RViz or the headset). `config/nav2_burger.yaml`: Jazzy defaults plus stamped `cmd_vel`, Burger footprint and speeds |
 | slam_toolbox | — | Online 2D mapping and localisation on `/scan_fixed` |
 | RViz | — | Map, lidar, odometry, TF, inspection points, annotated camera image |
 
@@ -30,6 +32,8 @@ TurtleBot3 Burger (OpenCR, LDS-02 lidar, Raspberry Pi 4), Intel RealSense D435i,
 | `/inspection/markers` | visualization_msgs/MarkerArray | out, 2 Hz |
 | `/inspection/points` | geometry_msgs/PoseArray | out, 2 Hz, map frame |
 | `/inspection/debug_image` | sensor_msgs/Image | out, only when viewed |
+| `/mr/map_to_odom` | geometry_msgs/PoseStamped | out, 10 Hz |
+| `/goal_pose` | geometry_msgs/PoseStamped | in (Nav2), from RViz or the headset |
 
 ## Results
 
@@ -43,6 +47,7 @@ TurtleBot3 Burger (OpenCR, LDS-02 lidar, Raspberry Pi 4), Intel RealSense D435i,
 | 2.0 m | 179 mm | 91 mm |
 
 - End-to-end ROS test (fake robot, 15 cm marker at 1.0 m): point confirmed in `map` at 3.5 mm from ground truth.
+- Mapping + Nav2 on a simulated Burger in a 4 × 4 m room: map built (81 × 81 cells at 5 cm), all Nav2 servers active, a `/goal_pose` 1.1 m away reached and reported as succeeded.
 
 ## Structure
 
@@ -52,7 +57,10 @@ tb3_mr_inspection/
 ├── src/scan_resampler_node.cpp
 ├── src/aruco_inspector_node.cpp
 ├── test/test_scan_resample.cpp                   GoogleTest
-├── launch/inspection.launch.py                   resampler + slam_toolbox + inspector + RViz
+├── src/mr_frames_publisher_node.cpp
+├── launch/inspection.launch.py                   replay: resampler + slam_toolbox + inspector + RViz
+├── launch/mapping_nav.launch.py                  live: resampler + slam_toolbox + Nav2 + headset frames
+├── config/nav2_burger.yaml
 ├── config/slam_toolbox.yaml
 ├── config/aruco_inspector.yaml
 ├── rviz/inspection.rviz
@@ -86,6 +94,13 @@ ros2 launch tb3_mr_inspection inspection.launch.py          # terminal 1
 ros2 bag play ~/bags/session_01 --clock                       # terminal 2
 ```
 
-**Live** (on a machine on the robot's network): `ros2 launch tb3_mr_inspection inspection.launch.py use_sim_time:=false`
+**Live mapping and navigation** (on a machine on the robot's network, robot running bringup):
+
+```bash
+sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup
+ros2 launch tb3_mr_inspection mapping_nav.launch.py              # add inspector:=true with the camera running
+```
+
+In RViz, drive with teleop to build the map, then use **Nav2 Goal** to send the robot somewhere.
 
 Set `marker_length` in `config/aruco_inspector.yaml` to the measured edge of the printed black square, and the camera mount with `camera_x`, `camera_z` (launch arguments, metres from `base_footprint`).

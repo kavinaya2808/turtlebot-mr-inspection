@@ -13,3 +13,6 @@ bags/
 
 # Python
 __pycache__/
+
+# temporary files from file-sync tools
+.fuse_hidden*

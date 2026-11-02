@@ -74,13 +74,16 @@ namespace RealTurtleBotMR.EditorTools
             fp.telemetry = tele; fp.anchor = anchor;
             robot.AddComponent<EditorQuickTest>().anchor = anchor;   // Editor-only helpers
             robot.AddComponent<RoomMeshVisibility>();                 // keep the blue room scan hidden
+            robot.AddComponent<MapOverlay>().anchor = anchor;         // SLAM map on the floor
+            var nav = robot.AddComponent<NavGoalSender>();            // point-and-go Nav2 goals
+            nav.anchor = anchor; nav.telemetry = tele;
 
             var tag = BuildHeadTag(robot.transform);
             tag.telemetry = tele; tag.anchor = anchor; tag.follow = robot.transform;
 
             // 3. Panel ---------------------------------------------------------
             var panel = BuildPanel();
-            panel.telemetry = tele; panel.anchor = anchor;
+            panel.telemetry = tele; panel.anchor = anchor; panel.nav = nav;
             Undo.RegisterCreatedObjectUndo(panel.gameObject, "Create TelemetryPanel");
 
             // 4. Scene tweaks --------------------------------------------------

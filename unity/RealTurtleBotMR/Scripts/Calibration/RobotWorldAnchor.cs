@@ -34,9 +34,32 @@ namespace RealTurtleBotMR
         public bool IsAligned { get; private set; }
         public float FloorY { get; private set; }
 
-        Vector3 originPos;          // where odom (0,0) is in the room
+        Vector3 originPos;          // where the tracking frame's (0,0) is in the room
         Quaternion originRot = Quaternion.identity;
         OVRCameraRig rig;
+        bool lastFrameWasMap;
+
+        /// <summary>True when aligned and the robot is tracked in the SLAM map frame.</summary>
+        public bool InMapFrame => IsAligned && telemetry != null && telemetry.UsingMapFrame;
+
+        /// <summary>Tracking-frame point (Unity axes, as from FLU) -> room position.</summary>
+        public Vector3 FrameToWorld(Vector3 frameUnity)
+        {
+            Vector3 w = originPos + originRot * frameUnity;
+            w.y = FloorY;
+            return w;
+        }
+
+        /// <summary>Room position -> tracking-frame point (Unity axes, y = 0).</summary>
+        public Vector3 WorldToFrame(Vector3 world)
+        {
+            Vector3 f = Quaternion.Inverse(originRot) * (world - originPos);
+            f.y = 0f;
+            return f;
+        }
+
+        /// <summary>Pose of the tracking frame's origin in the room (for drawing the map).</summary>
+        public Pose FrameOriginInWorld => new Pose(new Vector3(originPos.x, FloorY, originPos.z), originRot);
 
         void Start()
         {
@@ -52,11 +75,20 @@ namespace RealTurtleBotMR
 
             if (!IsAligned || telemetry == null) return;
 
+            // SLAM started or stopped: re-anchor in the new frame so the robot stays where it is.
+            bool isMap = telemetry.UsingMapFrame;
+            if (isMap != lastFrameWasMap)
+            {
+                lastFrameWasMap = isMap;
+                SetAlignment(transform.position, transform.eulerAngles.y);
+                Debug.Log($"[RobotWorldAnchor] Tracking in {(isMap ? "map (SLAM)" : "odom")} frame");
+            }
+
             FineTune();
 
-            Vector3 targetPos = originPos + originRot * telemetry.OdomPositionUnity;
+            Vector3 targetPos = originPos + originRot * telemetry.FramePositionUnity;
             targetPos.y = FloorY;
-            Quaternion targetRot = originRot * Quaternion.Euler(0f, telemetry.OdomYawUnity, 0f);
+            Quaternion targetRot = originRot * Quaternion.Euler(0f, telemetry.FrameYawUnity, 0f);
 
             float k = 1f - Mathf.Exp(-followSharpness * Time.deltaTime);
             transform.SetPositionAndRotation(
@@ -88,9 +120,10 @@ namespace RealTurtleBotMR
         /// <summary>Declare that the robot currently stands at worldPos with worldYaw.</summary>
         public void SetAlignment(Vector3 worldPos, float worldYaw)
         {
-            originRot = Quaternion.Euler(0f, worldYaw - telemetry.OdomYawUnity, 0f);
-            originPos = worldPos - originRot * telemetry.OdomPositionUnity;
+            originRot = Quaternion.Euler(0f, worldYaw - telemetry.FrameYawUnity, 0f);
+            originPos = worldPos - originRot * telemetry.FramePositionUnity;
             originPos.y = 0f;
+            lastFrameWasMap = telemetry.UsingMapFrame;
             IsAligned = true;
         }
 
@@ -100,8 +133,8 @@ namespace RealTurtleBotMR
             bool leftGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.LTouch);
             if (!rightGrip && !leftGrip) return;
 
-            Vector3 robotNow = originPos + originRot * telemetry.OdomPositionUnity;
-            float robotYaw = (originRot * Quaternion.Euler(0f, telemetry.OdomYawUnity, 0f)).eulerAngles.y;
+            Vector3 robotNow = originPos + originRot * telemetry.FramePositionUnity;
+            float robotYaw = (originRot * Quaternion.Euler(0f, telemetry.FrameYawUnity, 0f)).eulerAngles.y;
 
             if (rightGrip)
             {
