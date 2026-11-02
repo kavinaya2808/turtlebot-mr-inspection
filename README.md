@@ -61,7 +61,8 @@ The project has two halves that talk over ROS 2:
 | 2.0 m | 179 mm | 91 mm |
 
 - **End to end** (simulated robot stream, 15 cm marker at 1.0 m, through slam_toolbox and TF): point confirmed in the map frame 3.5 mm from ground truth.
-- **Mapping + Nav2** on a simulated Burger: map built, all Nav2 servers active, a goal on `/goal_pose` reached and reported as succeeded.
+- **Live mapping and point-and-go on the real robot:** the Burger mapped the room with slam_toolbox while driven by teleop; in the headset the occupancy grid lined up with the real floor, and goals sent by aiming the controller at the floor and clicking the stick were planned and driven by Nav2, with the planned path drawn on the floor.
+- **Mapping + Nav2** on a simulated Burger (before the real test): map built, all Nav2 servers active, a goal on `/goal_pose` reached and reported as succeeded.
 
 ## Repository structure
 
@@ -118,14 +119,14 @@ Drive with `ros2 run turtlebot3_teleop teleop_keyboard`.
 2. Copy `unity/RealTurtleBotMR` and `unity/RealTurtleBotMR.meta` into the project's `Assets/`.
 3. Make it build for Quest: `python3 tools/patch_unity_project_for_quest.py /path/to/MR-SLAM`
 4. Open Unity, run **RealTurtleBotMR → Set Up Scene**, switch the platform to Android and **Build And Run** to the Quest (developer mode on, USB-C).
-5. In the headset (controllers, not hands): type `<ROBOT_IP>` in the ROS panel and press **Connect**. Rest the right controller on the robot, pointing where it drives, and press **A**.
+5. In the headset (controllers, not hands): type the IP of the machine running the bridge in the ROS panel (`<ROBOT_IP>` if it runs on the robot) and press **Connect**. Rest the right controller on the robot, pointing where it drives, and press **A**.
 
 | Control | Action |
 | --- | --- |
 | A | Align with the robot |
 | Right grip + right stick / left grip + left stick | Slide / rotate the alignment |
 | B | Bring the panel in front of you |
-| Right stick click (aiming at the floor) | Send the robot there (needs SLAM + Nav2) |
+| Right stick pressed down (aiming at the floor, white ring visible) | Send the robot there (needs SLAM + Nav2) |
 | X | Show or hide the SLAM map on the floor |
 | Y | Show or hide the room scan |
 | Trigger | Click UI |
@@ -141,7 +142,9 @@ cd ~/ws && colcon build --packages-select tb3_mr_inspection && source install/se
 ros2 launch tb3_mr_inspection mapping_nav.launch.py
 ```
 
-Drive with teleop to build the map, then send goals with **Nav2 Goal** in RViz, or in the headset: align with A, aim at the floor and click the right stick.
+Wait for `Managed nodes are active`, drive with teleop to build the map, stop teleop, then send goals with **Nav2 Goal** in RViz, or in the headset: align with A, aim at the floor until the white ring appears and press the right stick down.
+
+Tested setup: the robot runs only bringup (and the camera); SLAM, Nav2 and the Unity bridge run on the computer (`ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0`), and the headset connects to the computer's IP. With the headset on, `rviz:=false` saves memory on a small VM.
 
 ### 4. Inspection points (recorded session)
 
