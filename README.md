@@ -2,7 +2,10 @@
 
 Live telemetry, a camera view and inspection points from a real TurtleBot3, shown where the robot actually is in the room through a Meta Quest 3S.
 
-![Point-and-go in mixed reality](docs/images/Demo_1.gif)
+<p align="center">
+  <img src="docs/images/Demo_1.gif" width="45%">
+  <img src="docs/images/Demo_2.gif" width="45%">
+</p>
 
 The project has two halves that talk over ROS 2:
 
